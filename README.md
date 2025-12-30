@@ -1,6 +1,6 @@
 ## 공공데이터 및 웹 크롤링 활용하여 병원(의료)정보 데이터 시각화 대시보드 제작 - 케어브릿지
 * **시연 영상은 필요하실때 연락주시면 보내드립니다**
-* [문서 다운로드](https://drive.google.com/file/d/1gXqq6W6XWE7XqcNARcffWmU5jGFes81M/view?usp=drive_link)
+* [문서및 가상환경](https://drive.google.com/drive/folders/1U52hYSRpNeul6byyYGkKamrlGaNVSBgt?usp=drive_link)
 
 ### 개요
 * 기존 서비스들은 응급실 현황이나 감염병 정보처럼 의사결정에 중요한 정보가 없거나 제한적으로 제공되는 한계가 있었습니다. 이러한 한계를 프로젝트 주제로 다룰 가치가 있다고 판단해 본 프로젝트를 선정했습니다.
