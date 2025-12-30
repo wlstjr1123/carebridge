@@ -10,7 +10,7 @@
 ### 프로젝트 참여도 및 기술 스택
 * 참여도 : 20%
 * 프론트 : HTML, CSS, JavaScript(AJAX), Jquery, WebSocket
-* 벡엔드 : Django, redis
+* 벡엔드 : Django, redis Channel Layer
 * DB : MySQL, Django ORM
 * 서버 : AWS EC2
 * API : Kakao Map API, 공공데이터포털 API(XML)
