@@ -29,4 +29,6 @@ urlpatterns = [
     path('qna_detail/<int:qna_id>/', views.qna_detail, name='qna_detail'),
     path('create_qna_dummy/', views.create_qna_dummy_data, name='create_qna_dummy'),
     path('delete_qna_dummy/', views.delete_qna_dummy_data, name='delete_qna_dummy'),
+
+    path("hospitals/search/2", views.hospital_search2, name="hospital_search2")
 ]

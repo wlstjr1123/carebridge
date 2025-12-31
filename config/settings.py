@@ -13,8 +13,11 @@ https://docs.djangoproject.com/en/5.2/ref/settings/
 from pathlib import Path
 import os
 import environ
+from dotenv import load_dotenv
 # Build paths inside the project like this: BASE_DIR / 'subdir'.
 BASE_DIR = Path(__file__).resolve().parent.parent
+
+load_dotenv()
 
 # 로그인 후/로그아웃 후 이동할 URL
 LOGIN_REDIRECT_URL = "/"
@@ -197,10 +200,8 @@ LAST_LOGIN_FIELD = None
 
 OPENAPI_SERVICE_KEY = os.getenv("OPENAPI_SERVICE_KEY")
 
-from dotenv import load_dotenv
-import urllib.parse
 
-load_dotenv()
+import urllib.parse
 
 RAW_API_KEY = os.getenv("OPENAPI_SERVICE_KEY")
 OPENAPI_SERVICE_KEY = urllib.parse.quote(RAW_API_KEY, safe='')

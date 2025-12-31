@@ -8,6 +8,9 @@
 from django.shortcuts import render, redirect, get_object_or_404  # 템플릿 렌더링, 리다이렉트, 객체 조회 또는 404 에러
 from django.utils import timezone  # 시간대를 고려한 현재 시간/날짜 처리
 from datetime import timedelta  # 날짜/시간 연산 (예: 7일 전 계산)
+from django.views.decorators.http import require_GET
+import requests
+from dotenv import load_dotenv
 
 # Django ORM 기능
 from django.db.models import Count, Sum, Q, Case, When, F, IntegerField  # 집계 함수(Count, Sum), 복잡한 쿼리 조건(Q), 조건부 표현식(Case, When), 필드 참조(F)
@@ -25,7 +28,9 @@ from apps.db.models import Users, Doctors, Hospital, Qna, DailyVisit, UserFavori
 import json  # JSON 데이터 처리 (차트 데이터 직렬화)
 import re  # 정규표현식 (더미 데이터 생성 시 패턴 매칭)
 import random  # 랜덤 데이터 생성 (더미 그래프 데이터용)
+import os
 
+load_dotenv()
 # Create your views here.
 
 # ========= 공통 유틸리티 함수 =========
@@ -2643,3 +2648,203 @@ def delete_doctor_dummy_data(request):
     #   - 의사 목록에서 더미 의사들이 사라진 것을 확인 가능
     #   - Doctors와 Users 모두 삭제되었으므로 목록에서 완전히 제거됨
     return redirect('doctor_list')
+
+@require_GET
+def hospital_search2(request):
+    """
+    병원 검색 API
+    - HIRA 병원정보 v2 API를 사용하여 병원명으로 검색
+    - DB에 등록된 병원인지 확인하여 is_registered 플래그 설정
+    """
+    q = request.GET.get("q", "").strip()
+
+    if not q:
+        return JsonResponse({"results": []})
+
+    # API 키 가져오기 (원본 키 사용, requests가 자동으로 인코딩함)
+    # HOSPITAL_SEARCH_API_KEY 환경변수 사용
+    raw_api_key = os.getenv("HOSPITAL_SEARCH_API_KEY")
+
+    #  병원정보 v2 API 호출
+    base_url = "https://apis.data.go.kr/B551182/hospInfoServicev2/getHospBasisList"
+    
+    params = {
+        "serviceKey": raw_api_key,  # 원본 키 사용 (requests가 자동으로 URL 인코딩)
+        "pageNo": 1,
+        "numOfRows": 100,  # 최대 100개 결과
+        "_type": "json",
+        "yadmNm": q,  # 병원명으로 검색
+    }
+
+    try:
+        resp = requests.get(base_url, params=params, timeout=10)
+        resp.raise_for_status()
+        data = resp.json()
+        
+        # 디버깅: API 응답 확인
+        import logging
+        logger = logging.getLogger(__name__)
+        logger.info(f"[병원 검색] API 호출 성공: 검색어='{q}', 응답 구조 확인 중...")
+    except Exception as e:
+        # API 호출 실패 시 DB에서만 검색
+        qs = (
+            Hospital.objects
+            .filter(Q(name__icontains=q))
+            .order_by("name")
+        )
+        registered_names = set(
+            Hospital.objects
+            .filter(hos_name__isnull=False)
+            .exclude(hos_name="")
+            .values_list("name", flat=True)
+            .distinct()
+        )
+        results = [
+            {
+                "id": h.pk,
+                "hpid": h.hpid or "",
+                "name": h.name,
+                "address": h.address,
+                "tel": h.tel,
+                "estb_date": h.estb_date,
+                "lat": h.lat,
+                "lng": h.lng,
+                "dr_total": h.dr_total,
+                "sggu": h.sggu,
+                "sido": h.sido,
+                "is_registered": h.name in registered_names,
+            }
+            for h in qs
+        ]
+        return JsonResponse({"results": results, "error": f"API 호출 실패: {str(e)}"})
+
+    # API 응답 파싱
+    try:
+        header = data.get("response", {}).get("header", {})
+        if header.get("resultCode") != "00":
+            error_msg = header.get("resultMsg", "알 수 없는 오류")
+            return JsonResponse({"results": [], "error": error_msg})
+
+        body = data.get("response", {}).get("body", {})
+        items_node = body.get("items")
+        
+        # items_node 타입에 따라 분기 (import_hospital_data.py와 동일한 로직)
+        if isinstance(items_node, dict):
+            # 일반적인 케이스: {"items": {"item": [ {...}, {...} ] }}
+            items = items_node.get("item", [])
+        elif isinstance(items_node, list):
+            # 혹시 바로 리스트로 오는 특이 케이스
+            items = items_node
+        elif items_node is None:
+            # 데이터 없음
+            items = []
+        else:
+            # 예상치 못한 형식
+            items = []
+        
+        # item이 dict 하나만 오는 경우 → 리스트로 감싸기
+        if isinstance(items, dict):
+            items = [items] if items else []
+        elif not isinstance(items, list):
+            items = []
+        
+        # 디버깅: items 개수 확인
+        import logging
+        logger = logging.getLogger(__name__)
+        logger.info(f"[병원 검색] 파싱된 items 개수: {len(items) if items else 0}")
+        
+        # DB에서 등록된 병원명 목록 조회 (병원명 기준으로 확인)
+        registered_names = set(
+            Hospital.objects
+            .filter(hos_name__isnull=False)
+            .exclude(hos_name="")
+            .values_list("name", flat=True)
+            .distinct()
+        )
+
+        results = []
+        for item in items:
+            # 병원명 처리 (문자열로 변환 후 strip)
+            hospital_name = str(item.get("yadmNm", "")).strip()
+            if not hospital_name:
+                continue
+            
+            # 주소 처리 (문자열로 변환 후 strip)
+            addr = str(item.get("addr", "")).strip()
+            if not addr:
+                addr = ""
+            
+            # 전화번호 처리 (정수일 수 있으므로 문자열로 변환)
+            tel_raw = item.get("telno", "")
+            if tel_raw is None:
+                tel = None
+            else:
+                tel = str(tel_raw).strip()
+                if not tel:
+                    tel = None
+            
+            # 개원일 처리 (estbDd) - 정수일 수 있으므로 문자열로 변환
+            estb_date_raw = item.get("estbDd", "")
+            if estb_date_raw is None:
+                estb_date = None
+            else:
+                estb_date = str(estb_date_raw).strip()
+                if not estb_date or len(estb_date) != 8:
+                    estb_date = None
+            
+            # 좌표 처리
+            lat = item.get("XPos", None)
+            lng = item.get("YPos", None)
+            if lat:
+                try:
+                    lat = float(lat)
+                except (ValueError, TypeError):
+                    lat = None
+            if lng:
+                try:
+                    lng = float(lng)
+                except (ValueError, TypeError):
+                    lng = None
+            
+            # 의사 수 처리
+            dr_total = item.get("drTotCnt", None)
+            if dr_total:
+                try:
+                    dr_total = int(dr_total)
+                except (ValueError, TypeError):
+                    dr_total = None
+            
+            # 시도/시군구 처리 (정수일 수 있으므로 문자열로 변환)
+            sido_raw = item.get("sidoCd", "")
+            if sido_raw is None:
+                sido = None
+            else:
+                sido = str(sido_raw).strip() or None
+            
+            sggu_raw = item.get("sgguCdNm", "")
+            if sggu_raw is None:
+                sggu = None
+            else:
+                sggu = str(sggu_raw).strip() or None
+            
+            results.append({
+                "id": item.get("ykiho", ""),  # 병원기관ID
+                "hpid": item.get("ykiho", ""),  # 병원기관ID (hpid로도 사용)
+                "name": hospital_name,
+                "address": addr,
+                "tel": tel,
+                "estb_date": estb_date,
+                "lat": lat,
+                "lng": lng,
+                "dr_total": dr_total,
+                "sggu": sggu,
+                "sido": sido,
+                "is_registered": hospital_name in registered_names,  # DB에 등록된 병원인지 확인
+            })
+
+        return JsonResponse({"results": results})
+        
+    except Exception as e:
+        return JsonResponse({"results": [], "error": f"응답 파싱 오류: {str(e)}"})
+
+
